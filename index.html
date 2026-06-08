@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#000000">
+  <title>현물 사진 연속 촬영</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    html,body{width:100%;height:100%;height:100dvh;overflow:hidden;background:#000;color:#fff;font-family:-apple-system,BlinkMacSystemFont,'Noto Sans KR',sans-serif}
+    body{display:flex;flex-direction:column}
+    .head{height:56px;display:flex;align-items:center;justify-content:space-between;padding:8px 14px;background:rgba(0,0,0,.7);flex-shrink:0}
+    .title{font-size:15px;font-weight:900}
+    .count{background:#1d4ed8;border-radius:999px;padding:5px 14px;font-size:14px;font-weight:900}
+    .icon-btn{width:38px;height:38px;border-radius:50%;border:1px solid rgba(255,255,255,.28);background:rgba(255,255,255,.12);color:#fff;font-size:22px}
+    .view{position:relative;flex:1;min-height:0;overflow:hidden;background:#000}
+    #video{width:100%;height:100%;object-fit:cover}
+    .flash{position:absolute;inset:0;background:#fff;opacity:0;pointer-events:none}
+    .flash.shot{animation:flash .18s ease}
+    @keyframes flash{0%{opacity:.85}100%{opacity:0}}
+    .hint{position:absolute;left:50%;bottom:18px;transform:translateX(-50%);padding:8px 12px;border-radius:999px;background:rgba(0,0,0,.5);font-size:12px;font-weight:700;color:rgba(255,255,255,.86);white-space:nowrap}
+    .controls{min-height:100px;padding:12px 18px calc(16px + env(safe-area-inset-bottom,0px));display:grid;grid-template-columns:1fr 86px 1fr;gap:14px;align-items:center;background:rgba(0,0,0,.88);flex-shrink:0}
+    .btn{min-height:56px;border:0;border-radius:16px;color:#fff;font-size:15px;font-weight:900;display:flex;align-items:center;justify-content:center}
+    .cancel{background:#475569}.done{background:#2563eb}
+    .shot-btn{width:82px;height:82px;border-radius:50%;border:5px solid rgba(255,255,255,.9);background:#fff;box-shadow:0 0 0 5px rgba(255,255,255,.2),0 8px 26px rgba(0,0,0,.4)}
+    .btn:active,.shot-btn:active,.icon-btn:active{transform:scale(.96);filter:brightness(.9)}
+    .err{position:absolute;inset:0;display:none;align-items:center;justify-content:center;flex-direction:column;gap:14px;padding:24px;background:#0f172a;text-align:center}
+    .err.show{display:flex}
+    .err p{font-size:14px;line-height:1.7;color:#e2e8f0;white-space:pre-wrap}
+  </style>
+</head>
+<body>
+  <div class="head">
+    <div class="title">현물 사진 촬영</div>
+    <div id="count" class="count">0장</div>
+    <button class="icon-btn" onclick="cancel()">×</button>
+  </div>
+  <div class="view">
+    <video id="video" autoplay playsinline muted></video>
+    <canvas id="canvas" style="display:none"></canvas>
+    <div id="flash" class="flash"></div>
+    <div class="hint">촬영 버튼으로 여러 장을 연속 촬영하세요</div>
+    <div id="err" class="err">
+      <p id="err-msg">카메라를 열 수 없습니다.</p>
+      <button class="btn done" style="width:180px" onclick="initCamera()">다시 시도</button>
+    </div>
+  </div>
+  <div class="controls">
+    <button class="btn cancel" onclick="cancel()">취소</button>
+    <button class="shot-btn" aria-label="촬영" onclick="capture()"></button>
+    <button class="btn done" onclick="done()">완료</button>
+  </div>
+
+<script>
+let stream = null;
+let photos = [];
+
+window.addEventListener('load', initCamera);
+window.addEventListener('pagehide', stopCamera);
+
+function setCount(){ document.getElementById('count').textContent = photos.length + '장'; }
+
+async function initCamera(){
+  document.getElementById('err').classList.remove('show');
+  stopCamera();
+  const video = document.getElementById('video');
+  const strategies = [
+    { video:{ facingMode:{ exact:'environment' }, width:{ ideal:1280 }, height:{ ideal:720 } }, audio:false },
+    { video:{ facingMode:'environment', width:{ ideal:1280 }, height:{ ideal:720 } }, audio:false },
+    { video:true, audio:false }
+  ];
+  let lastErr = null;
+  for (const constraints of strategies) {
+    try {
+      stream = await navigator.mediaDevices.getUserMedia(constraints);
+      break;
+    } catch(err) {
+      lastErr = err;
+      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') break;
+    }
+  }
+  if (!stream) {
+    showError(lastErr);
+    return;
+  }
+  video.srcObject = stream;
+  try { await video.play(); } catch(e) {}
+}
+
+function capture(){
+  const video = document.getElementById('video');
+  if (!video.videoWidth) return;
+  const canvas = document.getElementById('canvas');
+  const maxPx = 1000;
+  const ratio = Math.min(1, maxPx / Math.max(video.videoWidth, video.videoHeight));
+  canvas.width = Math.round(video.videoWidth * ratio);
+  canvas.height = Math.round(video.videoHeight * ratio);
+  canvas.getContext('2d', { alpha:false }).drawImage(video, 0, 0, canvas.width, canvas.height);
+  photos.push(canvas.toDataURL('image/jpeg', 0.68));
+  setCount();
+  const flash = document.getElementById('flash');
+  flash.classList.remove('shot');
+  void flash.offsetWidth;
+  flash.classList.add('shot');
+}
+
+function done(){
+  if (!photos.length) {
+    alert('촬영된 사진이 없습니다.');
+    return;
+  }
+  post({ _fieldPhotoCapture:true, photos });
+  stopCamera();
+  setTimeout(() => window.close(), 120);
+}
+
+function cancel(){
+  stopCamera();
+  window.close();
+}
+
+function post(data){
+  if (window.opener && !window.opener.closed) {
+    window.opener.postMessage(data, '*');
+  }
+}
+
+function stopCamera(){
+  if (stream) {
+    stream.getTracks().forEach(t => t.stop());
+    stream = null;
+  }
+  const video = document.getElementById('video');
+  if (video) video.srcObject = null;
+}
+
+function showError(err){
+  const name = err && err.name ? err.name : 'UnknownError';
+  let msg = '카메라를 열 수 없습니다.';
+  if (name === 'NotAllowedError' || name === 'PermissionDeniedError') {
+    msg = '카메라 권한이 차단되었습니다.\n주소창의 권한 설정에서 카메라를 허용해 주세요.';
+  } else if (name === 'NotFoundError') {
+    msg = '카메라를 찾을 수 없습니다.';
+  }
+  document.getElementById('err-msg').textContent = msg;
+  document.getElementById('err').classList.add('show');
+}
+</script>
+</body>
+</html>
