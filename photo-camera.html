@@ -76,7 +76,18 @@ async function initCamera(){
       break;
     } catch(err) {
       lastErr = err;
+      console.error('[photo-camera] getUserMedia failed', err && err.name, err && err.message);
       if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') break;
+      if (err.name === 'NotReadableError' || err.name === 'AbortError') {
+        await new Promise(resolve => setTimeout(resolve, 250));
+        try {
+          stream = await navigator.mediaDevices.getUserMedia(constraints);
+        } catch(retryErr) {
+          lastErr = retryErr;
+          console.error('[photo-camera] getUserMedia retry failed', retryErr && retryErr.name, retryErr && retryErr.message);
+        }
+        break;
+      }
     }
   }
   if (!stream) {
