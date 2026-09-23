@@ -147,13 +147,14 @@ function stopCamera(){
 
 function showError(err){
   const name = err && err.name ? err.name : 'UnknownError';
+  const safeName = String(name).replace(/[^A-Za-z0-9_-]/g, '').slice(0, 64) || 'UnknownError';
   let msg = '카메라를 열 수 없습니다.';
   if (name === 'NotAllowedError' || name === 'PermissionDeniedError') {
     msg = '카메라 권한이 차단되었습니다.\n주소창의 권한 설정에서 카메라를 허용해 주세요.';
   } else if (name === 'NotFoundError') {
     msg = '카메라를 찾을 수 없습니다.';
   }
-  document.getElementById('err-msg').textContent = msg;
+  document.getElementById('err-msg').textContent = msg + ' (' + safeName + ')';
   document.getElementById('err').classList.add('show');
 }
 </script>
